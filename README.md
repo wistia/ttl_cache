@@ -7,7 +7,7 @@ Provides a callback for hooking into expiration
 
 ```ex
 def deps do
-  {:ttl_cache, "~> 0.1"}
+  {:ttl_cache, "~> 0.1", github: "wistia/ttl_cache"}
 end
 ```
 
