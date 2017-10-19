@@ -58,7 +58,7 @@ defmodule TTLCacheTest do
       {:ok, pid} = TTLCache.Server.start_link(ttl: 1000)
       :ok = TTLCache.Server.put(pid, :hello, :world)
       :ok = TTLCache.Server.put(pid, :elixir, :is_cool)
-      assert TTLCache.Server.entries(pid) == {:ok, %{hello: :world, elixir: :is_cool}}
+      assert TTLCache.Server.entries(pid) == %{hello: :world, elixir: :is_cool}
     end
   end
 

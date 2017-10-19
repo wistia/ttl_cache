@@ -71,7 +71,7 @@ defmodule TTLCache.Server do
   end
 
   def handle_call(:entries, _from, state) do
-    {:reply, {:ok, state.entries}, state}
+    {:reply, state.entries, state}
   end
 
   def handle_call({:delete, key}, _from, state) do
