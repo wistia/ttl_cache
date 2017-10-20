@@ -20,7 +20,7 @@ defmodule TTLCacheTest do
       ttl = 500
       {:ok, pid} = TTLCache.Server.start_link(ttl: ttl)
       :ok = TTLCache.Server.put(pid, :hello, :world)
-      :timer.sleep 1000
+      :timer.sleep(1000)
       assert TTLCache.Server.get(pid, :hello) == nil
     end
 
@@ -30,15 +30,15 @@ defmodule TTLCacheTest do
       :ok = TTLCache.Server.put(pid, :hello, :world)
 
       # Sleep for half of the TTL then update (elapsed = ttl / 2)
-      :timer.sleep round(ttl / 2)
+      :timer.sleep(round(ttl / 2))
       :ok = TTLCache.Server.put(pid, :hello, :mom)
 
       # Wake up after the original expire would have happened (elapsed = (7/6) * ttl)
-      :timer.sleep round(ttl * 2/3)
+      :timer.sleep(round(ttl * 2 / 3))
       assert TTLCache.Server.get(pid, :hello) == :mom
 
       # Wake up after the updated expire should have happened (elapsed > 2 * ttl)
-      :timer.sleep ttl
+      :timer.sleep(ttl)
       assert TTLCache.Server.get(pid, :hello) == nil
     end
   end
@@ -72,7 +72,7 @@ defmodule TTLCacheTest do
 
     test "doesn't call the expire callback" do
       parent = self()
-      {:ok, pid} = TTLCache.Server.start_link(ttl: 1000, on_expire: fn _ -> send parent, :yo end)
+      {:ok, pid} = TTLCache.Server.start_link(ttl: 1000, on_expire: fn _ -> send(parent, :yo) end)
       :ok = TTLCache.Server.put(pid, :hello, :world)
       :ok = TTLCache.Server.delete(pid, :hello)
       refute_received :yo, 1_000

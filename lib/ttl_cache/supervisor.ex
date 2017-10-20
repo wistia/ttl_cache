@@ -7,10 +7,12 @@ defmodule TTLCache.Supervisor do
 
   def init(_) do
     children = [
-      worker(TTLCache.Server, [[ttl: Application.fetch_env!(:ttl_cache, :ttl)], [name: TTLCache.Server.Global]]),
+      worker(TTLCache.Server, [
+        [ttl: Application.fetch_env!(:ttl_cache, :ttl)],
+        [name: TTLCache.Server.Global]
+      ])
     ]
 
     supervise(children, strategy: :one_for_one)
   end
 end
-

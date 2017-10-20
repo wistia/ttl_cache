@@ -27,6 +27,7 @@ defmodule TTLCache.Server do
     ttl = args[:ttl] || Application.fetch_env!(:ttl_cache, :ttl)
     refresh_strategy = args[:refresh_strategy] || @default_refresh_strategy
     on_expire = args[:on_expire]
+
     state = %{
       ttl: ttl,
       on_expire: on_expire,
@@ -34,6 +35,7 @@ defmodule TTLCache.Server do
       refresh_strategy: refresh_strategy,
       watermarks: %{}
     }
+
     validate_state!(state)
     {:ok, state}
   end
@@ -50,6 +52,7 @@ defmodule TTLCache.Server do
       |> maybe_increment_watermark(key)
       |> maybe_start_expiration_clock(key)
       |> put_in([:entries, key], value)
+
     {:reply, :ok, state}
   end
 
@@ -93,12 +96,13 @@ defmodule TTLCache.Server do
       n -> n + 1
     end)
   end
+
   defp maybe_increment_watermark(state, _), do: state
 
   defp expire?(state = %{refresh_strategy: :on_write}, key, watermark) do
-    Map.has_key?(state[:entries], key) &&
-      watermark == get_in(state, [:watermarks, key])
+    Map.has_key?(state[:entries], key) && watermark == get_in(state, [:watermarks, key])
   end
+
   defp expire?(state, key, _) do
     Map.has_key?(state[:entries], key)
   end
@@ -111,6 +115,7 @@ defmodule TTLCache.Server do
   defp update_key_state(key, :TTLCache_delete, state) do
     update_in(state[:entries], fn map -> Map.delete(map, key) end)
   end
+
   defp update_key_state(key, value, state) do
     maybe_increment_watermark(state, key)
     |> maybe_start_expiration_clock(key)
@@ -173,6 +178,7 @@ defmodule TTLCache.Server do
     expire_in(key, state.ttl, current_watermark)
     state
   end
+
   defp maybe_start_expiration_clock(state, key) do
     if key in Map.keys(state.entries) do
       :ok

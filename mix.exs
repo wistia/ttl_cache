@@ -2,12 +2,14 @@ defmodule TtlCache.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :ttl_cache,
-     version: "0.1.0",
-     elixir: "~> 1.3",
-     build_embedded: false,
-     start_permanent: Mix.env == :prod,
-     deps: deps()]
+    [
+      app: :ttl_cache,
+      version: "0.1.0",
+      elixir: "~> 1.3",
+      build_embedded: false,
+      start_permanent: Mix.env() == :prod,
+      deps: deps()
+    ]
   end
 
   # Configuration for the OTP application
