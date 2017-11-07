@@ -166,6 +166,14 @@ defmodule TTLCache.Server do
     GenServer.call(pid, :entries)
   end
 
+  def keys(pid \\ @global) do
+    entries(pid) |> Map.keys
+  end
+
+  def values(pid \\ @global) do
+    entries(pid) |> Map.values
+  end
+
   def stop(pid, reason \\ :normal) do
     GenServer.stop(pid, reason)
   end
