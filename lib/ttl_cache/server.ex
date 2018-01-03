@@ -4,9 +4,9 @@ defmodule TTLCache.Server do
 
   @global TTLCache.Server.Global
   @default_refresh_strategy :never
-  @default_expiration_strategy :send_after
-  @refresh_strategies [:never, :on_write]
-  @expiration_strategies [:send_after]
+  @default_expiration_strategy TTLCache.Expiration.SendAfter
+  @refresh_strategies [:never, :on_write, :on_read, :on_read_write]
+  @expiration_strategies [TTLCache.Expiration.SendAfter]
 
   @doc """
   Creates a new server process.
@@ -98,24 +98,30 @@ defmodule TTLCache.Server do
 
   @doc false
   def init(args) do
-    state = %{
-      ttl: args[:ttl] || Application.fetch_env!(:ttl_cache, :ttl),
-      on_expire: args[:on_expire],
-      on_read: &on_read/2,
-      on_write: &on_write/2,
-      entries: %{},
-      refresh_strategy: args[:refresh_strategy] || @default_refresh_strategy,
-      expiration_strategy: args[:expiration_strategy] || @default_expiration_strategy,
-      watermarks: %{}
-    }
+    refresh_strategy = args[:refresh_strategy] || @default_refresh_strategy
+    expiration_strategy = args[:expiration_strategy] || @default_expiration_strategy
 
-    unless state.refresh_strategy in @refresh_strategies do
+    unless refresh_strategy in @refresh_strategies do
       raise ArgumentError, "Invalid refresh_strategy"
     end
 
-    unless state.expiration_strategy in @expiration_strategies do
+    unless expiration_strategy in @expiration_strategies do
       raise ArgumentError, "Invalid expiration_strategy"
     end
+
+    state = %{
+      ttl: args[:ttl] || Application.fetch_env!(:ttl_cache, :ttl),
+      on_expire: args[:on_expire],
+      on_read: &expiration_strategy.on_read/2,
+      on_write: &expiration_strategy.on_write/2,
+      on_delete: &expiration_strategy.on_delete/2,
+      expire?: &expiration_strategy.expire?/2,
+      entries: %{},
+      refresh_strategy: refresh_strategy,
+      expiration_strategy: expiration_strategy
+    }
+
+    state = expiration_strategy.init(state)
 
     {:ok, state}
   end
@@ -161,16 +167,8 @@ defmodule TTLCache.Server do
     {:reply, :ok, delete_key(key, state)}
   end
 
-  @doc false
-  def handle_info({:expire, key, watermark}, state) do
-    should_expire =
-      if state.refresh_strategy != :never do
-        Map.has_key?(state[:entries], key) && watermark == get_in(state, [:watermarks, key])
-      else
-        Map.has_key?(state[:entries], key)
-      end
-
-    if should_expire do
+  def handle_info({:expire, {key, metadata}}, state) do
+    if run_callback(state, :expire?, {key, metadata}) do
       run_callback(state[:on_expire], {key, state[:entries][key]})
       {:noreply, delete_key(key, state)}
     else
@@ -179,8 +177,9 @@ defmodule TTLCache.Server do
   end
 
   defp delete_key(key, state) do
-    update_in(state[:entries], fn entries -> Map.delete(entries, key) end)
-    |> update_in([:watermarks], fn watermarks -> Map.delete(watermarks, key) end)
+    state
+    |> update_in([:entries], fn entries -> Map.delete(entries, key) end)
+    |> run_callback(:on_delete, key)
   end
 
   defp update_key_state(key, :TTLCache_delete, state) do
@@ -196,28 +195,4 @@ defmodule TTLCache.Server do
   defp run_callback(nil, _), do: :ok
   defp run_callback(callback, arg) when is_function(callback), do: callback.(arg)
   defp run_callback(state, key, args), do: state[key].(state, args)
-
-  defp on_write(state, {key, _}) do
-    if state.refresh_strategy == :on_write || state.refresh_strategy == :on_read_write do
-      n = Map.get(state[:watermarks], key, -1) + 1
-      Process.send_after(self(), {:expire, key, n}, state.ttl)
-      put_in(state[:watermarks][key], n)
-    else
-      if key not in Map.keys(state.entries) do
-        Process.send_after(self(), {:expire, key, nil}, state.ttl)
-      end
-
-      state
-    end
-  end
-
-  defp on_read(state, key) do
-    if state.refresh_strategy == :on_read || state.refresh_strategy == :on_read_write do
-      n = Map.get(state[:watermarks], key, -1) + 1
-      Process.send_after(self(), {:expire, key, n}, state.ttl)
-      put_in(state[:watermarks][key], n)
-    else
-      state
-    end
-  end
 end
