@@ -1,6 +1,5 @@
-require Logger
-
 defmodule TTLCache.Server do
+  require Logger
   use GenServer
 
   @global TTLCache.Server.Global
@@ -23,6 +22,75 @@ defmodule TTLCache.Server do
     GenServer.start_link(__MODULE__, args, opts)
   end
 
+  @doc """
+  Adds `value` to the cache identified by `pid` under the key `key`. The value
+  will expire based on the TTL provided in `TTLCache.Server.start_link/2`
+  """
+  def put(pid \\ @global, key, value) do
+    GenServer.call(pid, {:put, key, value})
+  end
+
+  @doc """
+  Returns the value associated with the key `key` for the cache identified by `pid`
+  """
+  def get(pid \\ @global, key) do
+    {:ok, val} = GenServer.call(pid, {:get, key})
+    val
+  end
+
+  @doc """
+  Updates the value associated with the key `key` for the cache identified by `pid` with
+  the given `fun`. `fun` will run on the server process and will block the server until
+  it returns. The TTL will not be refreshed
+  """
+  def update(pid \\ @global, key, fun) do
+    GenServer.call(pid, {:update, key, fun})
+  end
+
+  @doc """
+  Modelled after Agent.get_and_update. Performs an atomic read-write operation
+  """
+  def get_and_update(pid \\ @global, key, fun) do
+    {:ok, rv} = GenServer.call(pid, {:get_and_update, key, fun})
+    rv
+  end
+
+  @doc """
+  Remove the key from the given cache
+  """
+  def delete(pid \\ @global, key) do
+    GenServer.call(pid, {:delete, key})
+  end
+
+  @doc """
+  List all of the entries in the cache
+  """
+  def entries(pid \\ @global) do
+    GenServer.call(pid, :entries)
+  end
+
+  @doc """
+  List all of the keys in the cache
+  """
+  def keys(pid \\ @global) do
+    entries(pid) |> Map.keys
+  end
+
+  @doc """
+  List all of the values in the cache
+  """
+  def values(pid \\ @global) do
+    entries(pid) |> Map.values
+  end
+
+  @doc """
+  Stop the cache process
+  """
+  def stop(pid, reason \\ :normal) do
+    GenServer.stop(pid, reason)
+  end
+
+  @doc false
   def init(args) do
     ttl = args[:ttl] || Application.fetch_env!(:ttl_cache, :ttl)
     refresh_strategy = args[:refresh_strategy] || @default_refresh_strategy
@@ -40,12 +108,7 @@ defmodule TTLCache.Server do
     {:ok, state}
   end
 
-  defp validate_state!(%{refresh_strategy: refresh_strategy}) do
-    unless refresh_strategy in @refresh_strategies do
-      raise ArgumentError, "Invalid refresh_strategy"
-    end
-  end
-
+  @doc false
   def handle_call({:put, key, value}, _from, state) do
     state =
       state
@@ -56,31 +119,37 @@ defmodule TTLCache.Server do
     {:reply, :ok, state}
   end
 
+  @doc false
   def handle_call({:get, key}, _from, state) do
     value = Map.get(state.entries, key)
     {:reply, {:ok, value}, state}
   end
 
+  @doc false
   def handle_call({:get_and_update, key, fun}, _from, state) do
     value = Map.get(state.entries, key)
     {rv, transformed} = fun.(value)
     {:reply, {:ok, rv}, update_key_state(key, transformed, state)}
   end
 
+  @doc false
   def handle_call({:update, key, fun}, _from, state) do
     value = Map.get(state.entries, key)
     transformed = fun.(value)
     {:reply, :ok, update_key_state(key, transformed, state)}
   end
 
+  @doc false
   def handle_call(:entries, _from, state) do
     {:reply, state.entries, state}
   end
 
+  @doc false
   def handle_call({:delete, key}, _from, state) do
     {:reply, :ok, delete_key(key, state)}
   end
 
+  @doc false
   def handle_info({:expire, key, metadata}, state) do
     if expire?(state, key, metadata) do
       run_callback(state[:on_expire], {key, state[:entries][key]})
@@ -122,62 +191,6 @@ defmodule TTLCache.Server do
     |> put_in([:entries, key], value)
   end
 
-  @doc """
-  Adds `value` to the cache identified by `pid` under the key `key`. The value
-  will expire based on the TTL provided in `TTLCache.Server.start_link/2`
-  """
-  def put(pid \\ @global, key, value) do
-    GenServer.call(pid, {:put, key, value})
-  end
-
-  @doc """
-  Returns the value associated with the key `key` for the cache identified by `pid`
-  """
-  def get(pid \\ @global, key) do
-    {:ok, val} = GenServer.call(pid, {:get, key})
-    val
-  end
-
-  @doc """
-  Updates the value associated with the key `key` for the cache identified by `pid` with
-  the given `fun`. `fun` will run on the server process and will block the server until
-  it returns. The TTL will not be refreshed
-  """
-  def update(pid \\ @global, key, fun) do
-    GenServer.call(pid, {:update, key, fun})
-  end
-
-  @doc """
-  Modelled after Agent.get_and_update. Performs an atomic read-write operation
-  """
-  def get_and_update(pid \\ @global, key, fun) do
-    {:ok, rv} = GenServer.call(pid, {:get_and_update, key, fun})
-    rv
-  end
-
-  @doc """
-  Remove the key from the given TTLCache
-  """
-  def delete(pid \\ @global, key) do
-    GenServer.call(pid, {:delete, key})
-  end
-
-  def entries(pid \\ @global) do
-    GenServer.call(pid, :entries)
-  end
-
-  def keys(pid \\ @global) do
-    entries(pid) |> Map.keys
-  end
-
-  def values(pid \\ @global) do
-    entries(pid) |> Map.values
-  end
-
-  def stop(pid, reason \\ :normal) do
-    GenServer.stop(pid, reason)
-  end
-
   defp run_callback(nil, _), do: :ok
   defp run_callback(callback, arg), do: callback.(arg)
 
@@ -199,5 +212,11 @@ defmodule TTLCache.Server do
 
   defp expire_in(key, ttl, metadata \\ nil) do
     Process.send_after(self(), {:expire, key, metadata}, ttl)
+  end
+
+  defp validate_state!(%{refresh_strategy: refresh_strategy}) do
+    unless refresh_strategy in @refresh_strategies do
+      raise ArgumentError, "Invalid refresh_strategy"
+    end
   end
 end
