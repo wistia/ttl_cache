@@ -24,24 +24,6 @@ defmodule TTLCacheTest do
       :timer.sleep(1000)
       assert Server.get(pid, :hello) == nil
     end
-
-    test "with refresh_strategy = :on_write, refreshes the TTL" do
-      ttl = 500
-      {:ok, pid} = Server.start_link(ttl: ttl, refresh_strategy: :on_write)
-      :ok = Server.put(pid, :hello, :world)
-
-      # Sleep for half of the TTL then update (elapsed = ttl / 2)
-      :timer.sleep(round(ttl / 2))
-      :ok = Server.put(pid, :hello, :mom)
-
-      # Wake up after the original expire would have happened (elapsed = (7/6) * ttl)
-      :timer.sleep(round(ttl * 2 / 3))
-      assert Server.get(pid, :hello) == :mom
-
-      # Wake up after the updated expire should have happened (elapsed > 2 * ttl)
-      :timer.sleep(ttl)
-      assert Server.get(pid, :hello) == nil
-    end
   end
 
   describe "on_expire" do
@@ -223,6 +205,127 @@ defmodule TTLCacheTest do
 
     test "refreshes on update() even if the value doesn't change" do
       {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :ok == Server.update(pid, :hello, & &1)
+      Process.sleep(250)
+      assert :world == Server.get(pid, :hello)
+    end
+  end
+
+  describe "on_read refresh strategy" do
+    test "refreshes on get()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :world == Server.get(pid, :hello)
+      Process.sleep(250)
+      assert :world == Server.get(pid, :hello)
+    end
+
+    test "doesn't refresh on entries()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert %{hello: :world} == Server.entries(pid)
+      Process.sleep(250)
+      assert nil == Server.get(pid, :hello)
+    end
+
+    test "doesn't refresh on get_and_update()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :world == Server.get_and_update(pid, :hello, &{&1, :mom})
+      Process.sleep(250)
+      assert nil == Server.get(pid, :hello)
+    end
+
+    test "doesn't refresh on put()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :ok == Server.put(pid, :hello, :mom)
+      Process.sleep(250)
+      assert nil == Server.get(pid, :hello)
+    end
+
+    test "doesn't refresh on update()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :ok == Server.update(pid, :hello, fn _ -> :mom end)
+      Process.sleep(250)
+      assert nil == Server.get(pid, :hello)
+    end
+  end
+
+  describe "on_read_write refresh strategy" do
+    test "refreshes on get()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :world == Server.get(pid, :hello)
+      Process.sleep(250)
+      assert :world == Server.get(pid, :hello)
+    end
+
+    test "doesn't refresh on entries()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert %{hello: :world} == Server.entries(pid)
+      Process.sleep(250)
+      assert nil == Server.get(pid, :hello)
+    end
+
+    test "refreshes on get_and_update()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :world == Server.get_and_update(pid, :hello, &{&1, :mom})
+      Process.sleep(250)
+      assert :mom == Server.get(pid, :hello)
+    end
+
+    test "refreshes on get_and_update() even if the value doesn't change" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :world == Server.get_and_update(pid, :hello, &{&1, &1})
+      Process.sleep(250)
+      assert :world == Server.get(pid, :hello)
+    end
+
+    test "refreshes on put()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :ok == Server.put(pid, :hello, :mom)
+      Process.sleep(250)
+      assert :mom == Server.get(pid, :hello)
+    end
+
+    test "refreshes on put() even if the value doesn't change" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :ok == Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :world == Server.get(pid, :hello)
+    end
+
+    test "refreshes on update()" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
+      :ok = Server.put(pid, :hello, :world)
+      Process.sleep(250)
+      assert :ok == Server.update(pid, :hello, fn _ -> :mom end)
+      Process.sleep(250)
+      assert :mom == Server.get(pid, :hello)
+    end
+
+    test "refreshes on update() even if the value doesn't change" do
+      {:ok, pid} = Server.start_link(ttl: 500, refresh_strategy: :on_read_write)
       :ok = Server.put(pid, :hello, :world)
       Process.sleep(250)
       assert :ok == Server.update(pid, :hello, & &1)

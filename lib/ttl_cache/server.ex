@@ -45,14 +45,16 @@ defmodule TTLCache.Server do
   @doc """
   Updates the value associated with the key `key` for the cache identified by `pid` with
   the given `fun`. `fun` will run on the server process and will block the server until
-  it returns. The TTL will not be refreshed
+  it returns. The TTL will not be refreshed. The special value of :TTLCache_delete can be
+  returned by `fun` to atomically instead delete the value
   """
   def update(pid \\ @global, key, fun) do
     GenServer.call(pid, {:update, key, fun})
   end
 
   @doc """
-  Modelled after Agent.get_and_update. Performs an atomic read-write operation
+  Modelled after Agent.get_and_update. Performs an atomic read-write operation. The special
+  value of :TTLCache_delete can be returned by `fun` to atomically instead delete the value
   """
   def get_and_update(pid \\ @global, key, fun) do
     {:ok, rv} = GenServer.call(pid, {:get_and_update, key, fun})
@@ -99,12 +101,22 @@ defmodule TTLCache.Server do
     state = %{
       ttl: args[:ttl] || Application.fetch_env!(:ttl_cache, :ttl),
       on_expire: args[:on_expire],
+      on_read: &on_read/2,
+      on_write: &on_write/2,
       entries: %{},
       refresh_strategy: args[:refresh_strategy] || @default_refresh_strategy,
       expiration_strategy: args[:expiration_strategy] || @default_expiration_strategy,
       watermarks: %{}
     }
-    validate_state!(state)
+
+    unless state.refresh_strategy in @refresh_strategies do
+      raise ArgumentError, "Invalid refresh_strategy"
+    end
+
+    unless state.expiration_strategy in @expiration_strategies do
+      raise ArgumentError, "Invalid expiration_strategy"
+    end
+
     {:ok, state}
   end
 
@@ -112,8 +124,7 @@ defmodule TTLCache.Server do
   def handle_call({:put, key, value}, _from, state) do
     state =
       state
-      |> maybe_increment_watermark(key)
-      |> maybe_start_expiration_clock(key)
+      |> run_callback(:on_write, {key, value})
       |> put_in([:entries, key], value)
 
     {:reply, :ok, state}
@@ -121,6 +132,7 @@ defmodule TTLCache.Server do
 
   @doc false
   def handle_call({:get, key}, _from, state) do
+    state = run_callback(state, :on_read, key)
     value = Map.get(state.entries, key)
     {:reply, {:ok, value}, state}
   end
@@ -150,30 +162,20 @@ defmodule TTLCache.Server do
   end
 
   @doc false
-  def handle_info({:expire, key, metadata}, state) do
-    if expire?(state, key, metadata) do
+  def handle_info({:expire, key, watermark}, state) do
+    should_expire =
+      if state.refresh_strategy != :never do
+        Map.has_key?(state[:entries], key) && watermark == get_in(state, [:watermarks, key])
+      else
+        Map.has_key?(state[:entries], key)
+      end
+
+    if should_expire do
       run_callback(state[:on_expire], {key, state[:entries][key]})
       {:noreply, delete_key(key, state)}
     else
       {:noreply, state}
     end
-  end
-
-  defp maybe_increment_watermark(state = %{refresh_strategy: :on_write}, key) do
-    update_in(state[:watermarks][key], fn
-      nil -> 0
-      n -> n + 1
-    end)
-  end
-
-  defp maybe_increment_watermark(state, _), do: state
-
-  defp expire?(state = %{refresh_strategy: :on_write}, key, watermark) do
-    Map.has_key?(state[:entries], key) && watermark == get_in(state, [:watermarks, key])
-  end
-
-  defp expire?(state, key, _) do
-    Map.has_key?(state[:entries], key)
   end
 
   defp delete_key(key, state) do
@@ -186,41 +188,36 @@ defmodule TTLCache.Server do
   end
 
   defp update_key_state(key, value, state) do
-    maybe_increment_watermark(state, key)
-    |> maybe_start_expiration_clock(key)
+    state
+    |> run_callback(:on_write, {key, value})
     |> put_in([:entries, key], value)
   end
 
   defp run_callback(nil, _), do: :ok
-  defp run_callback(callback, arg), do: callback.(arg)
+  defp run_callback(callback, arg) when is_function(callback), do: callback.(arg)
+  defp run_callback(state, key, args), do: state[key].(state, args)
 
-  defp maybe_start_expiration_clock(state = %{refresh_strategy: :on_write}, key) do
-    current_watermark = state.watermarks[key]
-    expire_in(key, state.ttl, current_watermark)
-    state
-  end
-
-  defp maybe_start_expiration_clock(state, key) do
-    if key in Map.keys(state.entries) do
-      :ok
+  defp on_write(state, {key, _}) do
+    if state.refresh_strategy == :on_write || state.refresh_strategy == :on_read_write do
+      n = Map.get(state[:watermarks], key, -1) + 1
+      Process.send_after(self(), {:expire, key, n}, state.ttl)
+      put_in(state[:watermarks][key], n)
     else
-      expire_in(key, state.ttl)
-    end
+      if key not in Map.keys(state.entries) do
+        Process.send_after(self(), {:expire, key, nil}, state.ttl)
+      end
 
-    state
+      state
+    end
   end
 
-  defp expire_in(key, ttl, metadata \\ nil) do
-    Process.send_after(self(), {:expire, key, metadata}, ttl)
-  end
-
-  defp validate_state!(%{refresh_strategy: refresh_strategy, expiration_strategy: expiration_strategy }) do
-    unless refresh_strategy in @refresh_strategies do
-      raise ArgumentError, "Invalid refresh_strategy"
-    end
-
-    unless expiration_strategy in @expiration_strategies do
-      raise ArgumentError, "Invalid expiration_strategy"
+  defp on_read(state, key) do
+    if state.refresh_strategy == :on_read || state.refresh_strategy == :on_read_write do
+      n = Map.get(state[:watermarks], key, -1) + 1
+      Process.send_after(self(), {:expire, key, n}, state.ttl)
+      put_in(state[:watermarks][key], n)
+    else
+      state
     end
   end
 end
