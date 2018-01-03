@@ -4,7 +4,9 @@ defmodule TTLCache.Server do
 
   @global TTLCache.Server.Global
   @default_refresh_strategy :never
+  @default_expiration_strategy :send_after
   @refresh_strategies [:never, :on_write]
+  @expiration_strategies [:send_after]
 
   @doc """
   Creates a new server process.
@@ -17,6 +19,8 @@ defmodule TTLCache.Server do
     * `:on_expire` - a callback that is triggered when an entry expires
 
     * `:refresh_strategy` - defines how to handle refreshing a key's ttl
+
+    * `:expiration_strategy` - defines how to expire keys
   """
   def start_link(args, opts \\ []) do
     GenServer.start_link(__MODULE__, args, opts)
@@ -92,18 +96,14 @@ defmodule TTLCache.Server do
 
   @doc false
   def init(args) do
-    ttl = args[:ttl] || Application.fetch_env!(:ttl_cache, :ttl)
-    refresh_strategy = args[:refresh_strategy] || @default_refresh_strategy
-    on_expire = args[:on_expire]
-
     state = %{
-      ttl: ttl,
-      on_expire: on_expire,
+      ttl: args[:ttl] || Application.fetch_env!(:ttl_cache, :ttl),
+      on_expire: args[:on_expire],
       entries: %{},
-      refresh_strategy: refresh_strategy,
+      refresh_strategy: args[:refresh_strategy] || @default_refresh_strategy,
+      expiration_strategy: args[:expiration_strategy] || @default_expiration_strategy,
       watermarks: %{}
     }
-
     validate_state!(state)
     {:ok, state}
   end
@@ -214,9 +214,13 @@ defmodule TTLCache.Server do
     Process.send_after(self(), {:expire, key, metadata}, ttl)
   end
 
-  defp validate_state!(%{refresh_strategy: refresh_strategy}) do
+  defp validate_state!(%{refresh_strategy: refresh_strategy, expiration_strategy: expiration_strategy }) do
     unless refresh_strategy in @refresh_strategies do
       raise ArgumentError, "Invalid refresh_strategy"
+    end
+
+    unless expiration_strategy in @expiration_strategies do
+      raise ArgumentError, "Invalid expiration_strategy"
     end
   end
 end
