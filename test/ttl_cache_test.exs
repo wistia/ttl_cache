@@ -62,6 +62,28 @@ defmodule TTLCacheTest do
     end
   end
 
+  describe "TTLCache.Server.keys/1" do
+    test "returns all the keys" do
+      {:ok, pid} = TTLCache.Server.start_link(ttl: 1000)
+      :ok = TTLCache.Server.put(pid, :hello, :world)
+      :ok = TTLCache.Server.put(pid, :elixir, :is_cool)
+      keys = TTLCache.Server.keys(pid)
+      assert :hello in keys
+      assert :elixir in keys
+    end
+  end
+
+  describe "TTLCache.Server.values/1" do
+    test "returns all the values" do
+      {:ok, pid} = TTLCache.Server.start_link(ttl: 1000)
+      :ok = TTLCache.Server.put(pid, :hello, :world)
+      :ok = TTLCache.Server.put(pid, :elixir, :is_cool)
+      values = TTLCache.Server.values(pid)
+      assert :world in values
+      assert :is_cool in values
+    end
+  end
+
   describe "TTLCache.Server.delete/1" do
     test "deletes the entry" do
       {:ok, pid} = TTLCache.Server.start_link(ttl: 1000)
