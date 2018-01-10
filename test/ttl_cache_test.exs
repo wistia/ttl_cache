@@ -333,4 +333,13 @@ defmodule TTLCacheTest do
       assert :world == Server.get(pid, :hello)
     end
   end
+
+  test "has_key?" do
+    {:ok, pid} = Server.start_link(ttl: 200)
+    refute Server.has_key?(pid, :hello)
+    :ok = Server.put(pid, :hello, :world)
+    assert Server.has_key?(pid, :hello)
+    Process.sleep(200)
+    refute Server.has_key?(pid, :hello)
+  end
 end

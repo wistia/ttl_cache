@@ -83,6 +83,13 @@ defmodule TTLCache.Server do
   end
 
   @doc """
+  Returns whether or not the key is in the cache
+  """
+  def has_key?(pid \\ @global, key) do
+    entries(pid) |> Map.has_key?(key)
+  end
+
+  @doc """
   List all of the values in the cache
   """
   def values(pid \\ @global) do
