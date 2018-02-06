@@ -8,7 +8,13 @@ defmodule TtlCache.Mixfile do
       elixir: "~> 1.3",
       build_embedded: false,
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      package: [
+        description: "Caches a value and expires it after a given TTL.",
+        maintainers: ["Wistia"],
+        licenses: ["MIT"],
+        links: %{"github" => "https://github.com/wistia/ttl_cache"}
+      ]
     ]
   end
 
@@ -36,6 +42,8 @@ defmodule TtlCache.Mixfile do
   #
   # Type "mix help deps" for more examples and options
   defp deps do
-    []
+    [
+      {:ex_doc, ">= 0.0.0", only: :dev}
+    ]
   end
 end
