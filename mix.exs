@@ -9,6 +9,7 @@ defmodule TtlCache.Mixfile do
       build_embedded: false,
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      source_url: "https://github.com/wistia/ttl_cache",
       package: [
         description: "Caches a value and expires it after a given TTL.",
         maintainers: ["Wistia"],
