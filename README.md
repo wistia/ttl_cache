@@ -1,7 +1,11 @@
-# TTLCache
+# ttl_cache
 
 Caches a value and expires it after a given TTL.
 Provides a callback for hooking into expiration
+
+## Why?
+
+`ttl_cache` is a simple key-value with time-based expiration. This helps to ensure that the store won't grow unbounded. It backs several of our critical in-memory data stores.
 
 ## Installation
 
